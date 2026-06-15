@@ -101,6 +101,7 @@ $equipoId = (int) ($equipo['id'] ?? 0);
 
                 <!-- ID oculto: identifica el equipo que se modifica -->
                 <input type="hidden" name="id" value="<?= $equipoId ?>">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
@@ -250,9 +251,6 @@ $equipoId = (int) ($equipo['id'] ?? 0);
                                     </option>
                                     <option value="EN MANTENIMIENTO" <?= $sel('estado', 'EN MANTENIMIENTO') ?>>
                                         En mantenimiento
-                                    </option>
-                                    <option value="DE BAJA"          <?= $sel('estado', 'DE BAJA') ?>>
-                                        De baja
                                     </option>
                                 </select>
                             </div>

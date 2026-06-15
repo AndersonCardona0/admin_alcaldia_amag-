@@ -1,5 +1,8 @@
 <?php
 
+require_once __DIR__ . '/../models/EquipoModel.php';
+require_once __DIR__ . '/../models/HistorialModel.php';
+
 /**
  * EquipoController.php
  * Gestiona las peticiones relacionadas con el módulo de Inventario.
@@ -18,9 +21,9 @@ class EquipoController
     }
 
     /**
-     * Renderiza la pantalla de Inventario Detallado.
+     * Renderiza la pantalla de Inventario Detallado con paginación del lado del servidor.
      * Captura los parámetros GET, los valida, ejecuta las consultas filtradas
-     * y pasa las variables a la vista correspondiente.
+     * segmentadas en páginas de 10 y pasa las variables a la vista.
      */
     public function inventario(): void
     {
@@ -48,8 +51,29 @@ class EquipoController
             $zonaId = '';
         }
 
+        // ── Paginación ────────────────────────────────────────────────────────
+        $limite = 10;
+
+        $paginaActual = filter_input(INPUT_GET, 'p', FILTER_VALIDATE_INT) ?? 1;
+        if (!$paginaActual || $paginaActual < 1) {
+            $paginaActual = 1;
+        }
+
+        // COUNT con los mismos filtros activos para conocer el universo total
+        $totalRegistros = $this->equipoModel->contarEquiposFiltrados($busqueda, $estado, $zonaId);
+        $totalPaginas   = $totalRegistros > 0 ? (int) ceil($totalRegistros / $limite) : 1;
+
+        // Guarda: página solicitada fuera del rango → servir la última válida
+        if ($paginaActual > $totalPaginas) {
+            $paginaActual = $totalPaginas;
+        }
+
+        $offset = ($paginaActual - 1) * $limite;
+
         // ── Consultas al modelo ────────────────────────────────────────────────
-        $equipos = $this->equipoModel->obtenerEquiposFiltrados($busqueda, $estado, $zonaId);
+        $equipos = $this->equipoModel->obtenerEquiposFiltrados(
+            $busqueda, $estado, $zonaId, $limite, $offset
+        );
 
         // Lista completa de zonas para poblar el <select> de filtros en la vista
         $zonas = $this->zonaModel->obtenerTodasConEncargado();
@@ -61,8 +85,15 @@ class EquipoController
             'zona_id' => $zonaId,
         ];
 
+        // Variables de paginación para la vista
+        $paginacion = [
+            'actual'     => $paginaActual,
+            'total'      => $totalPaginas,
+            'limite'     => $limite,
+            'registros'  => $totalRegistros,
+        ];
+
         // ── Delegación a la vista ──────────────────────────────────────────────
-        // Las variables $equipos, $zonas y $filtros quedan en el scope del include
         require_once __DIR__ . '/../views/inventario.php';
     }
 
@@ -410,6 +441,320 @@ class EquipoController
         }
     }
 
+    /**
+     * Procesa el POST de baja lógica de un equipo.
+     * Exige justificación técnica, contrasta estrictamente que el estado
+     * anterior !== 'DE BAJA' e inserta el evento de auditoría via EquipoModel.
+     */
+    public function darDeBaja(): void
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: /?page=inventario');
+            exit;
+        }
+
+        // ── RBAC: solo ADMINISTRADOR puede ejecutar bajas (defense-in-depth) ──
+        requiereAdministrador('/?page=inventario');
+
+        // ── Validación CSRF ───────────────────────────────────────────────────
+        if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+            $_SESSION['flash_error'] = 'Petición no autorizada o caducada. Intente nuevamente.';
+            header('Location: /?page=inventario');
+            exit;
+        }
+
+        $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
+        if (!$id || $id <= 0) {
+            $_SESSION['flash_error'] = 'ID de equipo no válido.';
+            header('Location: /?page=inventario');
+            exit;
+        }
+
+        $justificacion = trim(
+            filter_input(INPUT_POST, 'justificacion', FILTER_SANITIZE_SPECIAL_CHARS) ?? ''
+        );
+        if ($justificacion === '') {
+            $_SESSION['flash_error'] = 'La justificación técnica es obligatoria para dar de baja un equipo.';
+            header("Location: /?page=detalle&id={$id}");
+            exit;
+        }
+
+        $equipo = $this->equipoModel->obtenerEquipoCompletoPorId($id);
+        if (empty($equipo)) {
+            $_SESSION['flash_error'] = 'El equipo solicitado no existe en el sistema.';
+            header('Location: /?page=inventario');
+            exit;
+        }
+
+        $estadoActual = $equipo['estado'] ?? '';
+
+        // Contrastamos estrictamente (!==) que el estado actual no sea ya 'DE BAJA'
+        if ($estadoActual === 'DE BAJA') {
+            $_SESSION['flash_error'] = 'El equipo ya figura como "DE BAJA" en el sistema.';
+            header("Location: /?page=detalle&id={$id}");
+            exit;
+        }
+
+        // $estadoActual !== 'DE BAJA' — estado válido para ejecutar la baja
+        $detalle = "Estado de '{$estadoActual}' a 'DE BAJA'. Motivo: {$justificacion}";
+
+        try {
+            $this->equipoModel->darDeBajaEquipo(
+                $id,
+                $detalle,
+                $_SESSION['usuario_nombre'] ?? 'Sistema'
+            );
+            $_SESSION['flash_success'] = "Equipo #{$id} dado de baja exitosamente.";
+            header("Location: /?page=detalle&id={$id}");
+            exit;
+
+        } catch (Throwable $ex) {
+            $ref = strtoupper(substr(bin2hex(random_bytes(4)), 0, 8));
+            error_log('[Sistema Alcaldía] [Ref:' . $ref . '] ' . get_class($ex)
+                . ' en EquipoController::darDeBaja(): ' . $ex->getMessage());
+            $_SESSION['flash_error'] = 'Error al procesar la baja. Referencia: ' . $ref;
+            header("Location: /?page=detalle&id={$id}");
+            exit;
+        }
+    }
+
+    /**
+     * Genera y fuerza la descarga del "Acta de Baja Institucional" en PDF.
+     * Solo opera sobre equipos cuyo estado sea exactamente 'DE BAJA'.
+     * Diseño estrictamente monocromático (escala de grises); membrete:
+     * "Alcaldía Amagá, Antioquia".
+     */
+    public function exportarActaBaja(): void
+    {
+        ob_start();
+
+        $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
+        if (!$id || $id <= 0) {
+            $_SESSION['flash_error'] = 'ID de equipo no válido para generar el acta de baja.';
+            header('Location: /?page=inventario');
+            exit;
+        }
+
+        $equipo = $this->equipoModel->obtenerEquipoCompletoPorId($id);
+        if (empty($equipo)) {
+            $_SESSION['flash_error'] = 'El equipo solicitado no existe; no se puede generar el acta.';
+            header('Location: /?page=inventario');
+            exit;
+        }
+
+        if ($equipo['estado'] !== 'DE BAJA') {
+            $_SESSION['flash_error'] = 'El Acta de Baja solo puede generarse para equipos en estado "DE BAJA".';
+            header("Location: /?page=detalle&id={$id}");
+            exit;
+        }
+
+        require_once __DIR__ . '/../libs/fpdf/fpdf.php';
+
+        $historialModel = new HistorialModel();
+        $registroBaja   = $historialModel->obtenerUltimaBaja($id);
+        $motivoBaja     = !empty($registroBaja['detalle'])
+            ? $registroBaja['detalle']
+            : 'Justificación no registrada en el sistema.';
+
+        $t = fn(mixed $s): string =>
+            mb_convert_encoding((string) ($s ?? ''), 'ISO-8859-1', 'UTF-8');
+        $v = fn(mixed $s): string =>
+            trim((string) ($s ?? '')) !== '' ? trim((string) ($s ?? '')) : '-';
+
+        static $meses = [
+            'January'   => 'enero',    'February'  => 'febrero',   'March'     => 'marzo',
+            'April'     => 'abril',    'May'        => 'mayo',      'June'       => 'junio',
+            'July'      => 'julio',    'August'     => 'agosto',    'September'  => 'septiembre',
+            'October'   => 'octubre',  'November'   => 'noviembre', 'December'   => 'diciembre',
+        ];
+        $fechaActual = strtr(date('d \d\e F \d\e Y'), $meses);
+
+        $pdf = new class('P', 'mm', 'A4') extends FPDF {
+            public string $fechaPie = '';
+
+            public function Footer(): void
+            {
+                $this->SetY(-12);
+                $this->SetDrawColor(180, 180, 180);
+                $this->SetLineWidth(0.3);
+                $this->Line(20, $this->GetY(), 190, $this->GetY());
+                $this->Ln(1.5);
+                $this->SetFont('Arial', 'I', 7);
+                $this->SetTextColor(140, 140, 140);
+                $texto = mb_convert_encoding(
+                    'Alcaldía Amagá, Antioquia - ' . $this->fechaPie,
+                    'ISO-8859-1', 'UTF-8'
+                );
+                $this->Cell(0, 4, $texto, 0, 0, 'C');
+            }
+        };
+
+        $pdf->fechaPie = $fechaActual;
+        $pdf->SetMargins(20, 20, 20);
+        $pdf->SetAutoPageBreak(true, 25);
+        $pdf->AddPage();
+
+        // ════════════════════════════════════════════════════════════════════════
+        // BLOQUE 1 · CABECERA INSTITUCIONAL
+        // ════════════════════════════════════════════════════════════════════════
+        $pdf->SetFont('Arial', 'B', 13);
+        $pdf->SetTextColor(30, 30, 30);
+        $pdf->Cell(0, 7, $t('ALCALDÍA MUNICIPAL DE AMAGÁ'), 0, 1, 'C');
+
+        $pdf->SetFont('Arial', '', 9);
+        $pdf->SetTextColor(80, 80, 80);
+        $pdf->Cell(0, 5, $t('Amagá, Antioquia — Colombia'), 0, 1, 'C');
+
+        $pdf->SetFont('Arial', '', 8.5);
+        $pdf->Cell(0, 4, $t('Unidad de Gestión Tecnológica e Informática'), 0, 1, 'C');
+
+        $pdf->SetDrawColor(200, 200, 200);
+        $pdf->SetLineWidth(0.4);
+        $pdf->Line(20, $pdf->GetY() + 3, 190, $pdf->GetY() + 3);
+        $pdf->Ln(9);
+
+        $pdf->SetFont('Arial', 'B', 14);
+        $pdf->SetTextColor(30, 30, 30);
+        $pdf->Cell(0, 8, $t('ACTA DE BAJA INSTITUCIONAL'), 0, 1, 'C');
+
+        $pdf->SetFont('Arial', '', 8.5);
+        $pdf->SetTextColor(80, 80, 80);
+        $pdf->Cell(0, 5, $t("Fecha de generación: {$fechaActual}     ·     Activo N.º #{$id}"), 0, 1, 'C');
+
+        $pdf->SetDrawColor(30, 30, 30);
+        $pdf->SetLineWidth(0.5);
+        $pdf->Line(20, $pdf->GetY() + 3, 190, $pdf->GetY() + 3);
+        $pdf->Ln(9);
+
+        // ── Helpers de sección y fila ─────────────────────────────────────────
+        $seccion = function(string $titulo) use ($pdf, $t): void {
+            $pdf->SetFont('Arial', 'B', 9);
+            $pdf->SetFillColor(235, 235, 235);
+            $pdf->SetTextColor(30, 30, 30);
+            $pdf->SetDrawColor(200, 200, 200);
+            $pdf->SetLineWidth(0.3);
+            $pdf->Cell(0, 7, $t('  ' . $titulo), 'B', 1, 'L', true);
+            $pdf->Ln(2);
+        };
+
+        $fila = function(string $etiqueta, string $valor, int $w = 60) use ($pdf, $t): void {
+            $pdf->SetDrawColor(210, 210, 210);
+            $pdf->SetLineWidth(0.2);
+            $pdf->SetFont('Arial', 'B', 8.5);
+            $pdf->SetTextColor(80, 80, 80);
+            $pdf->Cell($w, 6, $t($etiqueta . ':'), 'B', 0, 'L');
+            $pdf->SetFont('Arial', '', 8.5);
+            $pdf->SetTextColor(30, 30, 30);
+            $pdf->Cell(0, 6, $t($valor), 'B', 1, 'L');
+        };
+
+        // ════════════════════════════════════════════════════════════════════════
+        // BLOQUE 2 · DATOS DEL BIEN TECNOLÓGICO DADO DE BAJA
+        // ════════════════════════════════════════════════════════════════════════
+        $seccion('Datos del Bien Tecnológico Dado de Baja');
+
+        $fila('Tipo de equipo',      $v($equipo['tipo']));
+        $fila('Marca',               $v($equipo['marca']));
+        $fila('Modelo',              $v($equipo['modelo']));
+        $fila('Número de serie',     $v($equipo['numero_serie']));
+        $fila('Procesador',          $v($equipo['procesador']));
+        $fila('Memoria RAM',         $v($equipo['ram']));
+        $fila('Almacenamiento',      $v($equipo['almacenamiento']));
+        $fila('Zona de asignación',  $v($equipo['zona_nombre']));
+        $fila('Sede',                $v($equipo['sede_nombre']));
+        $fila('Último responsable',  $v($equipo['funcionario_nombre']));
+        $fila('Cargo',               $v($equipo['funcionario_cargo']));
+        $pdf->Ln(5);
+
+        // ════════════════════════════════════════════════════════════════════════
+        // BLOQUE 3 · JUSTIFICACIÓN TÉCNICA DE BAJA
+        // ════════════════════════════════════════════════════════════════════════
+        $seccion('Justificación Técnica de Baja');
+
+        $pdf->SetFont('Arial', '', 9);
+        $pdf->SetTextColor(30, 30, 30);
+        $pdf->MultiCell(0, 5.5, $t($motivoBaja), 0, 'J');
+        $pdf->Ln(5);
+
+        // ════════════════════════════════════════════════════════════════════════
+        // BLOQUE 4 · DECLARACIÓN DE BAJA DEFINITIVA
+        // ════════════════════════════════════════════════════════════════════════
+        $seccion('Declaración de Baja Definitiva');
+
+        $declaracion =
+            'El suscrito, en representación de la Unidad de Gestión Tecnológica e Informática '
+          . 'de la Alcaldía Municipal de Amagá, Antioquia, certifica que el bien tecnológico '
+          . 'descrito en el presente instrumento ha sido retirado de forma definitiva del inventario '
+          . 'activo de la entidad, en razón de las causas expuestas en la sección anterior. Dicho '
+          . 'retiro no implica la destrucción física del activo, sino su baja del sistema de '
+          . 'administración de bienes tecnológicos, quedando disponible para los procesos de '
+          . 'disposición final que determine la entidad conforme a la normativa vigente aplicable.';
+
+        $pdf->SetFont('Arial', '', 9);
+        $pdf->SetTextColor(30, 30, 30);
+        $pdf->MultiCell(0, 5.5, $t($declaracion), 0, 'J');
+
+        // ════════════════════════════════════════════════════════════════════════
+        // BLOQUE 5 · FIRMAS DE CONFORMIDAD
+        // ════════════════════════════════════════════════════════════════════════
+        $pdf->Ln(22);
+        $yFirma = $pdf->GetY();
+
+        $pdf->SetDrawColor(30, 30, 30);
+        $pdf->SetLineWidth(0.3);
+
+        $xIzq = 25;
+        $xDer = 115;
+        $wCol = 70;
+
+        $pdf->Line($xIzq, $yFirma, $xIzq + $wCol, $yFirma);
+        $pdf->Line($xDer, $yFirma, $xDer + $wCol, $yFirma);
+
+        $pdf->SetXY($xIzq, $yFirma + 2);
+        $pdf->SetFont('Arial', 'B', 8);
+        $pdf->SetTextColor(30, 30, 30);
+        $pdf->Cell($wCol, 5, $t($v($equipo['funcionario_nombre'])), 0, 0, 'C');
+
+        $pdf->SetXY($xIzq, $yFirma + 7);
+        $pdf->SetFont('Arial', '', 8);
+        $pdf->SetTextColor(80, 80, 80);
+        $pdf->Cell($wCol, 4, $t($v($equipo['funcionario_cargo'])), 0, 0, 'C');
+
+        $pdf->SetXY($xIzq, $yFirma + 12);
+        $pdf->SetFont('Arial', 'I', 7.5);
+        $pdf->SetTextColor(130, 130, 130);
+        $pdf->Cell($wCol, 4, $t('Último Responsable del Activo'), 0, 0, 'C');
+
+        $pdf->SetXY($xDer, $yFirma + 2);
+        $pdf->SetFont('Arial', 'B', 8);
+        $pdf->SetTextColor(30, 30, 30);
+        $pdf->Cell($wCol, 5, $t('Unidad de Gestión Tecnológica'), 0, 0, 'C');
+
+        $pdf->SetXY($xDer, $yFirma + 7);
+        $pdf->SetFont('Arial', '', 8);
+        $pdf->SetTextColor(80, 80, 80);
+        $pdf->Cell($wCol, 4, $t('e Informática'), 0, 0, 'C');
+
+        $pdf->SetXY($xDer, $yFirma + 12);
+        $pdf->SetFont('Arial', 'I', 7.5);
+        $pdf->SetTextColor(130, 130, 130);
+        $pdf->Cell($wCol, 4, $t('Autorizado por el Líder de Sistemas'), 0, 0, 'C');
+
+        $pdf->SetTextColor(0, 0, 0);
+
+        $serie   = trim((string) ($equipo['numero_serie'] ?? ''));
+        $sufijo  = $serie !== ''
+            ? preg_replace('/[^A-Za-z0-9_\-]/', '_', $serie)
+            : "ID_{$id}";
+        $archivo = "Acta_Baja_{$sufijo}.pdf";
+
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        $pdf->Output('D', $archivo);
+        exit;
+    }
+
     // ── Métodos privados de apoyo ─────────────────────────────────────────────
 
     /** Renderiza el formulario de registro con los selectores cargados desde la BD. */
@@ -426,6 +771,13 @@ class EquipoController
     /** Valida, sanitiza y persiste los datos del formulario POST. */
     private function procesarRegistro(FuncionarioModel $funcionarioModel): void
     {
+        // ── Validación CSRF ───────────────────────────────────────────────────
+        if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+            $_SESSION['flash_error'] = 'Petición no autorizada o caducada. Intente nuevamente.';
+            header('Location: /?page=registrar');
+            exit;
+        }
+
         // ── Captura y sanitización de todos los campos POST ───────────────────
         $datos = [
             'tipo'           => trim(filter_input(INPUT_POST, 'tipo',           FILTER_SANITIZE_SPECIAL_CHARS) ?? ''),
@@ -465,7 +817,9 @@ class EquipoController
             $datos['funcionario_id'] = '';
         }
 
-        $estadosValidos = ['OPERATIVO', 'EN MANTENIMIENTO', 'DE BAJA'];
+        // 'DE BAJA' se excluye: un equipo no puede registrarse ya dado de baja.
+        // La baja lógica solo se realiza vía la ruta guardiada darDeBaja().
+        $estadosValidos = ['OPERATIVO', 'EN MANTENIMIENTO'];
         if (empty($datos['estado']) || !in_array($datos['estado'], $estadosValidos, strict: true)) {
             $errores[] = 'Seleccione un estado válido para el equipo.';
         }
@@ -509,8 +863,10 @@ class EquipoController
             exit;
 
         } catch (PDOException $e) {
-            // Error inesperado de BD: muestra al usuario sin exponer detalles técnicos
-            $errores[] = 'Ocurrió un error al guardar el equipo. Intente nuevamente o contacte al administrador.';
+            $ref = strtoupper(substr(bin2hex(random_bytes(4)), 0, 8));
+            error_log('[Sistema Alcaldía] [Ref:' . $ref . '] PDOException en EquipoController::procesarRegistro(): '
+                . $e->getMessage() . ' en ' . $e->getFile() . ':' . $e->getLine());
+            $errores[] = 'Ocurrió un error al guardar el equipo. Referencia: ' . $ref;
             $this->mostrarFormulario($funcionarioModel, $errores, $datos);
         }
     }
@@ -542,6 +898,13 @@ class EquipoController
             exit;
         }
 
+        // ── Barrera de inmutabilidad: bloquea edición de activos dados de baja ─
+        if ($equipo['estado'] === 'DE BAJA') {
+            $_SESSION['flash_error'] = 'Acceso denegado. El equipo se encuentra dado de baja permanentemente.';
+            header("Location: /?page=detalle&id={$id}");
+            exit;
+        }
+
         // Superpone los valores enviados por POST sobre los de la BD para
         // repoblar el formulario con la entrada del usuario tras un error
         if (!empty($equipoOverride)) {
@@ -564,6 +927,13 @@ class EquipoController
      */
     private function procesarEdicion(FuncionarioModel $funcionarioModel): void
     {
+        // ── Validación CSRF ───────────────────────────────────────────────────
+        if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+            $_SESSION['flash_error'] = 'Petición no autorizada o caducada. Intente nuevamente.';
+            header('Location: /?page=inventario');
+            exit;
+        }
+
         // El ID viaja en el form como campo oculto
         $id = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
 
@@ -579,6 +949,16 @@ class EquipoController
         if (empty($equipoOriginal)) {
             $_SESSION['flash_error'] = 'El equipo solicitado no existe en el sistema.';
             header('Location: /?page=inventario');
+            exit;
+        }
+
+        // ── Barrera de inmutabilidad POST ─────────────────────────────────────
+        // Bloquea modificaciones directas por POST a equipos dados de baja,
+        // independientemente de lo que muestre (o no muestre) la UI.
+        // La guarda en mostrarFormularioEdicion() protege el GET; esta cubre el POST.
+        if ($equipoOriginal['estado'] === 'DE BAJA') {
+            $_SESSION['flash_error'] = 'Acceso denegado. El equipo se encuentra dado de baja permanentemente.';
+            header("Location: /?page=detalle&id={$id}");
             exit;
         }
 
@@ -620,7 +1000,10 @@ class EquipoController
             $datos['funcionario_id'] = '';
         }
 
-        $estadosValidos = ['OPERATIVO', 'EN MANTENIMIENTO', 'DE BAJA'];
+        // 'DE BAJA' se excluye deliberadamente: la baja lógica solo puede ejecutarse
+        // a través de la ruta guardiada darDeBaja() (requiereAdministrador + justificación).
+        // Aceptarla aquí permitiría que un AUDITOR realice soft-deletes sin pasar por el RBAC.
+        $estadosValidos = ['OPERATIVO', 'EN MANTENIMIENTO'];
         if (empty($datos['estado']) || !in_array($datos['estado'], $estadosValidos, strict: true)) {
             $errores[] = 'Seleccione un estado válido para el equipo.';
         }
@@ -728,7 +1111,7 @@ class EquipoController
             ':equipo_id' => $id,
             ':accion'    => 'ACTUALIZACIÓN',
             ':detalle'   => $detalle,
-            ':usuario'   => 'Auditor Sistema',
+            ':usuario'   => $_SESSION['usuario_nombre'] ?? 'Sistema',
         ];
 
         // ── Ejecución de la transacción atómica ───────────────────────────────
@@ -744,7 +1127,10 @@ class EquipoController
             exit;
 
         } catch (PDOException $e) {
-            $errores[] = 'Error al actualizar el equipo. Intente nuevamente o contacte al administrador.';
+            $ref = strtoupper(substr(bin2hex(random_bytes(4)), 0, 8));
+            error_log('[Sistema Alcaldía] [Ref:' . $ref . '] PDOException en EquipoController::procesarEdicion(): '
+                . $e->getMessage() . ' en ' . $e->getFile() . ':' . $e->getLine());
+            $errores[] = 'Error al actualizar el equipo. Referencia: ' . $ref;
             $datos['id'] = $id;
             $this->mostrarFormularioEdicion($funcionarioModel, $datos, $errores);
         }

@@ -38,21 +38,81 @@ class EquipoModel
     }
 
     /**
-     * Retorna equipos con sus datos relacionales, aplicando filtros opcionales.
-     * La consulta se construye dinámicamente pero NUNCA concatena valores crudos:
-     * cada condición agrega un marcador nombrado que se enlaza via PDO::execute().
+     * Cuenta el total de equipos que coinciden con los filtros activos.
+     * Replica exactamente la lógica dinámica de WHERE de obtenerEquiposFiltrados()
+     * pero ejecuta un COUNT(*) en lugar de traer filas completas.
+     * Utilizado por el controlador para calcular el número total de páginas.
+     */
+    public function contarEquiposFiltrados(
+        string $busqueda = '',
+        string $estado   = '',
+        string $zonaId   = ''
+    ): int {
+        $sql = "
+            SELECT COUNT(*)
+            FROM equipos e
+            LEFT JOIN zonas        z ON e.zona_id       = z.id
+            LEFT JOIN sedes        s ON z.sede_id        = s.id
+            LEFT JOIN funcionarios f ON e.funcionario_id = f.id
+            WHERE 1=1
+        ";
+
+        $params = [];
+
+        if ($busqueda !== '') {
+            $termino = '%' . $busqueda . '%';
+            $sql .= " AND (
+                e.tipo            LIKE :b_tipo
+                OR e.marca        LIKE :b_marca
+                OR e.modelo       LIKE :b_modelo
+                OR e.numero_serie LIKE :b_serie
+                OR f.nombre       LIKE :b_func
+            )";
+            $params[':b_tipo']   = $termino;
+            $params[':b_marca']  = $termino;
+            $params[':b_modelo'] = $termino;
+            $params[':b_serie']  = $termino;
+            $params[':b_func']   = $termino;
+        }
+
+        if ($estado !== '') {
+            $sql .= " AND e.estado = :estado";
+            $params[':estado'] = $estado;
+        }
+
+        if ($zonaId !== '') {
+            $sql .= " AND e.zona_id = :zona_id";
+            $params[':zona_id'] = (int) $zonaId;
+        }
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * Retorna equipos con sus datos relacionales, aplicando filtros opcionales
+     * y paginación del lado del servidor.
+     *
+     * LIMIT y OFFSET se vinculan obligatoriamente con bindValue(..., PDO::PARAM_INT)
+     * porque con EMULATE_PREPARES=false MySQL rechaza strings en esas cláusulas.
+     * Los params de filtro se vinculan individualmente antes de execute() para que
+     * no colisionen con el binding explícito de LIMIT/OFFSET.
      *
      * @param string $busqueda Término libre buscado en tipo, marca, modelo, serie y funcionario.
      * @param string $estado   Valor exacto del ENUM ('OPERATIVO', 'EN MANTENIMIENTO', 'DE BAJA').
      * @param string $zonaId   ID numérico de la zona a filtrar.
+     * @param int    $limite   Registros por página (default 10).
+     * @param int    $offset   Desplazamiento desde el primer registro (default 0).
      * @return array<int, array<string, mixed>>
      */
     public function obtenerEquiposFiltrados(
         string $busqueda = '',
         string $estado   = '',
-        string $zonaId   = ''
+        string $zonaId   = '',
+        int    $limite   = 10,
+        int    $offset   = 0
     ): array {
-        // Base de la consulta: LEFT JOINs para reunir toda la información en una sola pasada
         $sql = "
             SELECT
                 e.id,
@@ -76,16 +136,14 @@ class EquipoModel
 
         $params = [];
 
-        // Búsqueda libre: se generan marcadores únicos por columna para evitar
-        // conflictos con drivers PDO que no permiten reutilizar el mismo nombre
         if ($busqueda !== '') {
             $termino = '%' . $busqueda . '%';
             $sql .= " AND (
-                e.tipo         LIKE :b_tipo
-                OR e.marca     LIKE :b_marca
-                OR e.modelo    LIKE :b_modelo
+                e.tipo            LIKE :b_tipo
+                OR e.marca        LIKE :b_marca
+                OR e.modelo       LIKE :b_modelo
                 OR e.numero_serie LIKE :b_serie
-                OR f.nombre    LIKE :b_func
+                OR f.nombre       LIKE :b_func
             )";
             $params[':b_tipo']   = $termino;
             $params[':b_marca']  = $termino;
@@ -94,22 +152,31 @@ class EquipoModel
             $params[':b_func']   = $termino;
         }
 
-        // Filtro exacto por estado del ENUM
         if ($estado !== '') {
             $sql .= " AND e.estado = :estado";
             $params[':estado'] = $estado;
         }
 
-        // Filtro exacto por zona (ya validado como numérico en el controlador)
         if ($zonaId !== '') {
             $sql .= " AND e.zona_id = :zona_id";
             $params[':zona_id'] = (int) $zonaId;
         }
 
-        $sql .= " ORDER BY e.fecha_registro DESC, e.id DESC";
+        $sql .= " ORDER BY e.fecha_registro DESC, e.id DESC LIMIT :limite OFFSET :offset";
 
         $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
+
+        // Vincular parámetros de filtro como cadenas (tipo por defecto)
+        foreach ($params as $clave => $valor) {
+            $stmt->bindValue($clave, $valor);
+        }
+
+        // LIMIT y OFFSET deben ser enteros nativos; el driver nativo de MySQL
+        // lanza error fatal si se pasan como strings con EMULATE_PREPARES=false
+        $stmt->bindValue(':limite', (int) $limite, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', (int) $offset, PDO::PARAM_INT);
+
+        $stmt->execute();
         return $stmt->fetchAll();
     }
 
@@ -208,6 +275,49 @@ class EquipoModel
                 VALUES (:equipo_id, :accion, :detalle, :usuario)
             ");
             $stmt3->execute($datosAuditoria);
+
+            $this->db->commit();
+
+        } catch (PDOException $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Ejecuta la baja lógica de un equipo en una transacción atómica:
+     * actualiza el estado a 'DE BAJA' e inserta el registro de auditoría.
+     * La cláusula `AND estado != 'DE BAJA'` garantiza idempotencia a nivel BD.
+     *
+     * @throws PDOException|RuntimeException Relanza tras rollback para que el controlador la gestione.
+     */
+    public function darDeBajaEquipo(int $id, string $detalle, string $usuario = 'Sistema'): void
+    {
+        try {
+            $this->db->beginTransaction();
+
+            // ── 1. Soft-delete lógico: solo cambia estado, nunca DELETE ───────────
+            $stmt1 = $this->db->prepare(
+                "UPDATE equipos SET estado = 'DE BAJA' WHERE id = :id AND estado != 'DE BAJA'"
+            );
+            $stmt1->execute([':id' => $id]);
+
+            if ($stmt1->rowCount() === 0) {
+                $this->db->rollBack();
+                throw new RuntimeException('La baja no pudo ejecutarse: el equipo ya figura como "DE BAJA".');
+            }
+
+            // ── 2. Registro de auditoría con el usuario real de sesión ────────────
+            $stmt2 = $this->db->prepare(
+                "INSERT INTO historial_cambios (equipo_id, accion, detalle, usuario)
+                 VALUES (:equipo_id, :accion, :detalle, :usuario)"
+            );
+            $stmt2->execute([
+                ':equipo_id' => $id,
+                ':accion'    => 'BAJA',
+                ':detalle'   => $detalle,
+                ':usuario'   => $usuario,
+            ]);
 
             $this->db->commit();
 

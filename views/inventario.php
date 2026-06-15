@@ -59,25 +59,11 @@ $e = fn(mixed $v): string => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, '
         <main class="flex-1 overflow-y-auto p-6">
 
             <!-- ── Encabezado de página ──────────────────────────────────────── -->
-            <div class="flex items-center justify-between mb-6">
-                <div>
-                    <h1 class="text-xl font-bold text-slate-800">Inventario de Equipos</h1>
-                    <p class="text-sm text-slate-500 mt-0.5">
-                        Consulta y filtra el parque tecnológico registrado en todas las sedes
-                    </p>
-                </div>
-                <!-- Botón exportar PDF (placeholder para fase futura) -->
-                <button type="button"
-                        title="Exportar a PDF — disponible próximamente"
-                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold
-                               text-red-700 bg-red-50 border border-red-200 rounded-lg
-                               hover:bg-red-100 transition-colors duration-150 cursor-not-allowed opacity-75">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                    Exportar PDF
-                </button>
+            <div class="mb-6">
+                <h1 class="text-xl font-bold text-slate-800">Inventario de Equipos</h1>
+                <p class="text-sm text-slate-500 mt-0.5">
+                    Consulta y filtra el parque tecnológico registrado en todas las sedes
+                </p>
             </div>
 
             <!-- ── Mensaje flash de error (redirect desde editar/registrar) ───── -->
@@ -244,9 +230,9 @@ $e = fn(mixed $v): string => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, '
 
             <?php else: ?>
 
-                <!-- Contador de resultados -->
+                <!-- Contador de resultados (total del universo filtrado, no solo la página) -->
                 <p class="text-xs text-slate-500 mb-3 px-1">
-                    <?= count($equipos) ?> equipo<?= count($equipos) !== 1 ? 's' : '' ?> encontrado<?= count($equipos) !== 1 ? 's' : '' ?>
+                    <?= $paginacion['registros'] ?> equipo<?= $paginacion['registros'] !== 1 ? 's' : '' ?> encontrado<?= $paginacion['registros'] !== 1 ? 's' : '' ?>
                     <?php if ($hayFiltros): ?>
                         <span class="text-slate-400">— con filtros aplicados</span>
                     <?php endif; ?>
@@ -379,22 +365,128 @@ $e = fn(mixed $v): string => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, '
                         </table>
                     </div>
 
-                    <!-- Pie de la tabla -->
-                    <div class="px-5 py-3 bg-slate-50 border-t border-slate-100
-                                flex items-center justify-between">
-                        <p class="text-xs text-slate-400">
-                            Mostrando <span class="font-semibold text-slate-600"><?= count($equipos) ?></span>
-                            registro<?= count($equipos) !== 1 ? 's' : '' ?>
-                        </p>
-                        <a href="/?page=registrar"
-                           class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold
-                                  text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg
-                                  transition-colors duration-150">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
-                            </svg>
-                            Registrar equipo
-                        </a>
+                    <!-- Pie de la tabla: resumen + paginación + acción registrar -->
+                    <div class="px-5 py-3 bg-slate-50 border-t border-slate-100">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+
+                            <!-- Resumen de registros en la página actual -->
+                            <p class="text-xs text-slate-400 flex-shrink-0">
+                                <?php
+                                $desde = ($paginacion['actual'] - 1) * $paginacion['limite'] + 1;
+                                $hasta = min($paginacion['actual'] * $paginacion['limite'], $paginacion['registros']);
+                                ?>
+                                Mostrando
+                                <span class="font-semibold text-slate-600"><?= $desde ?>–<?= $hasta ?></span>
+                                de
+                                <span class="font-semibold text-slate-600"><?= $paginacion['registros'] ?></span>
+                                registro<?= $paginacion['registros'] !== 1 ? 's' : '' ?>
+                            </p>
+
+                            <!-- Controles de paginación (ocultos si hay una sola página) -->
+                            <?php if ($paginacion['total'] > 1): ?>
+                            <nav class="flex items-center gap-1" aria-label="Paginación de inventario">
+                                <?php
+                                // URL base preservando todos los filtros activos; 'p' se sobreescribe en cada enlace
+                                $urlPagina = fn(int $n): string =>
+                                    '/?' . http_build_query(array_merge($_GET, ['p' => $n]));
+
+                                $totalPags = $paginacion['total'];
+                                $pagActual = $paginacion['actual'];
+                                ?>
+
+                                <!-- Botón Anterior -->
+                                <?php if ($pagActual > 1): ?>
+                                    <a href="<?= htmlspecialchars($urlPagina($pagActual - 1), ENT_QUOTES, 'UTF-8') ?>"
+                                       title="Página anterior"
+                                       class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium
+                                              text-slate-600 bg-white border border-slate-200 rounded-lg
+                                              hover:bg-slate-50 transition-colors duration-150">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                                        </svg>
+                                    </a>
+                                <?php else: ?>
+                                    <span class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium
+                                                 text-slate-300 bg-slate-50 border border-slate-200 rounded-lg
+                                                 opacity-50 cursor-not-allowed" aria-disabled="true">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                                        </svg>
+                                    </span>
+                                <?php endif; ?>
+
+                                <!-- Números de página con elipsis -->
+                                <?php
+                                // Rango visible: primera, última, actual ±2; resto como elipsis
+                                $rango    = [];
+                                for ($i = 1; $i <= $totalPags; $i++) {
+                                    if ($i === 1 || $i === $totalPags || ($i >= $pagActual - 2 && $i <= $pagActual + 2)) {
+                                        $rango[] = $i;
+                                    }
+                                }
+                                $anterior = null;
+                                foreach ($rango as $pag):
+                                    if ($anterior !== null && $pag - $anterior > 1):
+                                ?>
+                                    <span class="px-1 py-1.5 text-xs text-slate-400 select-none">…</span>
+                                <?php
+                                    endif;
+                                    $anterior = $pag;
+                                ?>
+                                    <?php if ($pag === $pagActual): ?>
+                                        <span class="inline-flex items-center justify-center w-8 h-7
+                                                     text-xs font-bold text-slate-800 bg-slate-200
+                                                     border border-slate-300 rounded-lg cursor-default"
+                                              aria-current="page">
+                                            <?= $pag ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <a href="<?= htmlspecialchars($urlPagina($pag), ENT_QUOTES, 'UTF-8') ?>"
+                                           class="inline-flex items-center justify-center w-8 h-7
+                                                  text-xs font-medium text-slate-600 bg-white
+                                                  border border-slate-200 rounded-lg
+                                                  hover:bg-slate-50 transition-colors duration-150">
+                                            <?= $pag ?>
+                                        </a>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+
+                                <!-- Botón Siguiente -->
+                                <?php if ($pagActual < $totalPags): ?>
+                                    <a href="<?= htmlspecialchars($urlPagina($pagActual + 1), ENT_QUOTES, 'UTF-8') ?>"
+                                       title="Página siguiente"
+                                       class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium
+                                              text-slate-600 bg-white border border-slate-200 rounded-lg
+                                              hover:bg-slate-50 transition-colors duration-150">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                        </svg>
+                                    </a>
+                                <?php else: ?>
+                                    <span class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium
+                                                 text-slate-300 bg-slate-50 border border-slate-200 rounded-lg
+                                                 opacity-50 cursor-not-allowed" aria-disabled="true">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                        </svg>
+                                    </span>
+                                <?php endif; ?>
+
+                            </nav>
+                            <?php endif; ?>
+
+                            <!-- Acceso rápido a registrar un nuevo equipo -->
+                            <a href="/?page=registrar"
+                               class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold
+                                      text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg
+                                      transition-colors duration-150 flex-shrink-0">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+                                </svg>
+                                Registrar equipo
+                            </a>
+
+                        </div>
                     </div>
 
                 </div><!-- /tabla -->

@@ -57,6 +57,7 @@ function iconoTimeline(string $accion): string
 }
 
 $equipoId = (int) ($equipo['id'] ?? 0);
+$esDeBaja = ($equipo['estado'] ?? '') === 'DE BAJA';
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -78,6 +79,49 @@ $equipoId = (int) ($equipo['id'] ?? 0);
         <?php include __DIR__ . '/modules/header.php'; ?>
 
         <main class="flex-1 overflow-y-auto p-6">
+
+            <!-- ── Mensajes flash ────────────────────────────────────────────── -->
+            <?php if (!empty($_SESSION['flash_success'])): ?>
+                <div class="mb-5 flex items-center gap-3 px-4 py-3 bg-emerald-50
+                            border border-emerald-200 rounded-lg text-emerald-800 text-sm font-medium">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    <?= $e($_SESSION['flash_success']) ?>
+                </div>
+                <?php unset($_SESSION['flash_success']); ?>
+            <?php endif; ?>
+            <?php if (!empty($_SESSION['flash_error'])): ?>
+                <div class="mb-5 flex items-center gap-3 px-4 py-3 bg-red-50
+                            border border-red-200 rounded-lg text-red-800 text-sm font-medium">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <?= $e($_SESSION['flash_error']) ?>
+                </div>
+                <?php unset($_SESSION['flash_error']); ?>
+            <?php endif; ?>
+
+            <!-- ── Banner: equipo dado de baja ──────────────────────────────── -->
+            <?php if ($esDeBaja): ?>
+                <div class="mb-5 flex items-start gap-3 px-4 py-3.5
+                            bg-slate-100 border border-slate-400 rounded-lg">
+                    <svg class="w-5 h-5 text-slate-500 flex-shrink-0 mt-0.5"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0
+                                 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                    </svg>
+                    <div>
+                        <p class="text-sm font-semibold text-slate-800">Activo dado de baja</p>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                            Este equipo ha sido retirado del inventario activo. Sus datos son de solo lectura
+                            y no pueden ser editados ni reasignados.
+                        </p>
+                    </div>
+                </div>
+            <?php endif; ?>
 
             <!-- ── Encabezado de página ──────────────────────────────────────── -->
             <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
@@ -112,8 +156,41 @@ $equipoId = (int) ($equipo['id'] ?? 0);
                 </div>
 
                 <!-- Acciones superiores -->
-                <div class="flex items-center gap-2 flex-shrink-0">
-                    <!-- Genera y descarga el Acta de Asignación en PDF -->
+                <div class="flex items-center gap-2 flex-shrink-0 flex-wrap">
+
+                    <?php if ($esDeBaja): ?>
+                        <!-- Acta de Baja PDF: solo disponible cuando el equipo está dado de baja -->
+                        <a href="/?page=exportar_acta_baja&id=<?= $equipoId ?>"
+                           title="Descargar Acta de Baja Institucional en formato PDF"
+                           class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold
+                                  text-slate-700 bg-slate-50 border border-slate-500 rounded-lg
+                                  hover:bg-slate-100 transition-colors duration-150">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414
+                                         A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M9 13h6m-3-3v6"/>
+                            </svg>
+                            Acta de Baja PDF
+                        </a>
+                    <?php elseif (esAdministrador()): ?>
+                        <!-- Dar de Baja: exclusivo para ADMINISTRADOR, equipo activo -->
+                        <button type="button" onclick="document.getElementById('modal-baja').classList.remove('hidden')"
+                                class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold
+                                       text-slate-700 bg-white border border-slate-700 rounded-lg
+                                       hover:bg-slate-50 transition-colors duration-150">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0
+                                         01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1
+                                         1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                            Dar de Baja
+                        </button>
+                    <?php endif; ?>
+
+                    <!-- Acta de Asignación PDF: siempre disponible como registro histórico -->
                     <a href="/?page=exportar_pdf&id=<?= $equipoId ?>"
                        title="Descargar Acta de Asignación en formato PDF"
                        class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold
@@ -126,20 +203,38 @@ $equipoId = (int) ($equipo['id'] ?? 0);
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M9 13h6m-3-3v6"/>
                         </svg>
-                        Generar Acta PDF
+                        Acta Asignación PDF
                     </a>
-                    <a href="/?page=editar&id=<?= $equipoId ?>"
-                       class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold
-                              text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg
-                              hover:bg-indigo-100 transition-colors duration-150">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0
-                                     002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828
-                                     15H9v-2.828l8.586-8.586z"/>
-                        </svg>
-                        Editar equipo
-                    </a>
+
+                    <?php if ($esDeBaja): ?>
+                        <!-- Editar: deshabilitado visualmente para equipos dados de baja -->
+                        <span title="No es posible editar un equipo dado de baja"
+                              class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold
+                                     text-slate-400 bg-slate-100 border border-slate-200 rounded-lg
+                                     cursor-not-allowed select-none opacity-60">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0
+                                         002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828
+                                         15H9v-2.828l8.586-8.586z"/>
+                            </svg>
+                            Editar equipo
+                        </span>
+                    <?php else: ?>
+                        <a href="/?page=editar&id=<?= $equipoId ?>"
+                           class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold
+                                  text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg
+                                  hover:bg-indigo-100 transition-colors duration-150">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0
+                                         002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828
+                                         15H9v-2.828l8.586-8.586z"/>
+                            </svg>
+                            Editar equipo
+                        </a>
+                    <?php endif; ?>
+
                     <a href="/?page=inventario"
                        class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium
                               text-slate-600 bg-white border border-slate-200 rounded-lg
@@ -380,6 +475,117 @@ $equipoId = (int) ($equipo['id'] ?? 0);
         </main>
 
     </div><!-- /columna principal -->
+
+    <?php if (!$esDeBaja && esAdministrador()): ?>
+    <!-- ════════════════════════════════════════════════════════════════════════
+         MODAL — Formulario de Baja (solo renderizado si el equipo NO es DE BAJA)
+         ════════════════════════════════════════════════════════════════════════ -->
+    <div id="modal-baja"
+         class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+         role="dialog" aria-modal="true" aria-labelledby="modal-baja-titulo">
+
+        <div class="bg-white rounded-xl border border-slate-300 shadow-2xl w-full max-w-lg mx-4">
+
+            <!-- Cabecera del modal -->
+            <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-7 h-7 bg-slate-100 border border-slate-300 rounded-lg
+                                flex items-center justify-center flex-shrink-0">
+                        <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0
+                                     01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1
+                                     1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                    </div>
+                    <h3 id="modal-baja-titulo" class="text-base font-bold text-slate-800">
+                        Dar de Baja — Activo #<?= $equipoId ?>
+                    </h3>
+                </div>
+                <button type="button"
+                        onclick="document.getElementById('modal-baja').classList.add('hidden')"
+                        class="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Cuerpo del modal -->
+            <form action="/?page=dar_de_baja" method="POST">
+                <input type="hidden" name="id" value="<?= $equipoId ?>">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+
+                <div class="px-6 py-5">
+                    <!-- Aviso de operación irreversible -->
+                    <div class="flex items-start gap-3 p-3.5 bg-slate-50 border border-slate-300
+                                rounded-lg mb-5">
+                        <svg class="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5"
+                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            Esta operación cambia el estado del activo a
+                            <strong class="text-slate-800">"DE BAJA"</strong> de forma permanente.
+                            El registro permanece en el sistema como historial inmutable.
+                            No se podrán editar ni reasignar sus datos una vez confirmada la baja.
+                        </p>
+                    </div>
+
+                    <!-- Campo de justificación -->
+                    <label for="justificacion-baja"
+                           class="block text-xs font-semibold text-slate-600 uppercase
+                                  tracking-wide mb-1.5">
+                        Justificación Técnica
+                        <span class="text-slate-800 normal-case font-bold ml-0.5">*</span>
+                    </label>
+                    <textarea id="justificacion-baja"
+                              name="justificacion"
+                              rows="4"
+                              required
+                              placeholder="Describa el motivo de la baja: obsolescencia, daño irreparable, pérdida, robo, etc."
+                              class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm
+                                     text-slate-800 placeholder-slate-400 bg-white
+                                     focus:outline-none focus:ring-2 focus:ring-slate-400
+                                     focus:border-slate-400 resize-none transition-shadow"></textarea>
+                    <p class="text-xs text-slate-400 mt-1.5">
+                        Esta justificación quedará registrada en el historial de auditoría
+                        y en el Acta de Baja Institucional.
+                    </p>
+                </div>
+
+                <!-- Pie del modal -->
+                <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+                    <button type="button"
+                            onclick="document.getElementById('modal-baja').classList.add('hidden')"
+                            class="px-4 py-2 text-sm font-medium text-slate-600 bg-white
+                                   border border-slate-300 rounded-lg hover:bg-slate-50
+                                   transition-colors duration-150">
+                        Cancelar
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 text-sm font-semibold text-white bg-slate-800
+                                   border border-slate-900 rounded-lg hover:bg-slate-900
+                                   transition-colors duration-150">
+                        Confirmar Baja
+                    </button>
+                </div>
+            </form>
+
+        </div><!-- /panel modal -->
+    </div><!-- /modal-baja -->
+
+    <script>
+        // Cierra el modal al hacer clic en el overlay (fuera del panel)
+        document.getElementById('modal-baja').addEventListener('click', function (e) {
+            if (e.target === this) {
+                this.classList.add('hidden');
+            }
+        });
+    </script>
+    <?php endif; ?>
 
 </body>
 </html>

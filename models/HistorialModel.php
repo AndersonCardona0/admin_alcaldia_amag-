@@ -32,4 +32,24 @@ class HistorialModel
         $stmt->execute([$equipoId]);
         return $stmt->fetchAll();
     }
+
+    /**
+     * Retorna el registro de auditoría más reciente correspondiente a la acción
+     * de baja ('BAJA') para el equipo indicado.
+     * Devuelve array vacío si no existe ningún evento de baja registrado.
+     *
+     * @return array<string, mixed>
+     */
+    public function obtenerUltimaBaja(int $equipoId): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT detalle, fecha, usuario
+             FROM   historial_cambios
+             WHERE  equipo_id = ? AND accion = 'BAJA'
+             ORDER BY fecha DESC
+             LIMIT 1"
+        );
+        $stmt->execute([$equipoId]);
+        return $stmt->fetch() ?: [];
+    }
 }

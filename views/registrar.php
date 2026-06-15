@@ -84,6 +84,8 @@ $sel = fn(string $campo, string $valor): string =>
             <!-- ── Formulario de dos columnas ────────────────────────────────── -->
             <form method="POST" action="/?page=registrar" novalidate>
 
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
                     <!-- ════════════════════════════════════════════════════════
@@ -238,9 +240,6 @@ $sel = fn(string $campo, string $valor): string =>
                                     </option>
                                     <option value="EN MANTENIMIENTO" <?= $sel('estado', 'EN MANTENIMIENTO') ?>>
                                         En mantenimiento
-                                    </option>
-                                    <option value="DE BAJA"          <?= $sel('estado', 'DE BAJA') ?>>
-                                        De baja
                                     </option>
                                 </select>
                             </div>
