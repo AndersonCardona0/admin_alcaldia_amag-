@@ -1,0 +1,409 @@
+<?php
+/**
+ * inventario.php — Vista del módulo de Inventario Detallado.
+ * Recibe del EquipoController:
+ *   $equipos  → array de filas con datos relacionales de hardware.
+ *   $zonas    → array de zonas para el selector de filtros.
+ *   $filtros  → array con los valores activos de búsqueda y filtrado.
+ * No ejecuta SQL ni procesa datos: solo renderiza la información recibida.
+ */
+
+// Función local: retorna las clases Tailwind del badge según el estado del equipo
+function badgeEquipo(string $estado): string
+{
+    return match ($estado) {
+        'OPERATIVO'        => 'bg-green-100  text-green-800',
+        'EN MANTENIMIENTO' => 'bg-yellow-100 text-yellow-800',
+        'DE BAJA'          => 'bg-red-100    text-red-800',
+        default            => 'bg-gray-100   text-gray-600',
+    };
+}
+
+// Función local: retorna el icono SVG del estado (círculo de color)
+function iconoEstado(string $estado): string
+{
+    $color = match ($estado) {
+        'OPERATIVO'        => 'text-green-500',
+        'EN MANTENIMIENTO' => 'text-yellow-500',
+        'DE BAJA'          => 'text-red-500',
+        default            => 'text-gray-400',
+    };
+    return "<span class=\"inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle
+                          {$color} bg-current\"></span>";
+}
+
+// Alias de escape corto para uso en la vista
+$e = fn(mixed $v): string => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, 'UTF-8');
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventario de Equipos — Alcaldía Municipal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="flex h-screen bg-slate-100 overflow-hidden font-sans antialiased">
+
+    <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
+    <?php include __DIR__ . '/modules/sidebar.php'; ?>
+
+    <!-- ── Columna principal ────────────────────────────────────────────────── -->
+    <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+        <!-- Barra superior -->
+        <?php include __DIR__ . '/modules/header.php'; ?>
+
+        <!-- Área de contenido desplazable -->
+        <main class="flex-1 overflow-y-auto p-6">
+
+            <!-- ── Encabezado de página ──────────────────────────────────────── -->
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h1 class="text-xl font-bold text-slate-800">Inventario de Equipos</h1>
+                    <p class="text-sm text-slate-500 mt-0.5">
+                        Consulta y filtra el parque tecnológico registrado en todas las sedes
+                    </p>
+                </div>
+                <!-- Botón exportar PDF (placeholder para fase futura) -->
+                <button type="button"
+                        title="Exportar a PDF — disponible próximamente"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold
+                               text-red-700 bg-red-50 border border-red-200 rounded-lg
+                               hover:bg-red-100 transition-colors duration-150 cursor-not-allowed opacity-75">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    Exportar PDF
+                </button>
+            </div>
+
+            <!-- ── Mensaje flash de error (redirect desde editar/registrar) ───── -->
+            <?php if (!empty($_SESSION['flash_error'])): ?>
+                <div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-5 flex items-start gap-3">
+                    <svg class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <p class="text-red-700 font-medium text-sm">
+                        <?= htmlspecialchars($_SESSION['flash_error'], ENT_QUOTES, 'UTF-8') ?>
+                    </p>
+                </div>
+                <?php unset($_SESSION['flash_error']); ?>
+            <?php endif; ?>
+
+            <!-- ── Mensaje flash de éxito (POST-Redirect-GET desde registrar) ─── -->
+            <?php if (!empty($_SESSION['flash_success'])): ?>
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-5 flex items-start gap-3">
+                    <svg class="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <p class="text-emerald-700 font-medium text-sm">
+                        <?= htmlspecialchars($_SESSION['flash_success'], ENT_QUOTES, 'UTF-8') ?>
+                    </p>
+                </div>
+                <?php unset($_SESSION['flash_success']); ?>
+            <?php endif; ?>
+
+            <!-- ── Barra de filtros ───────────────────────────────────────────── -->
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-5">
+                <form method="GET" action="/" class="flex flex-wrap gap-3 items-end">
+
+                    <!-- Página destino (mantiene el enrutador activo) -->
+                    <input type="hidden" name="page" value="inventario">
+
+                    <!-- Buscador libre -->
+                    <div class="flex-1 min-w-[200px]">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
+                            Buscar equipo
+                        </label>
+                        <div class="relative">
+                            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
+                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                            </svg>
+                            <input type="search"
+                                   name="search"
+                                   value="<?= $e($filtros['search']) ?>"
+                                   placeholder="Tipo, marca, modelo, serie o responsable..."
+                                   class="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg
+                                          bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500
+                                          focus:border-transparent placeholder-slate-400 text-slate-700">
+                        </div>
+                    </div>
+
+                    <!-- Filtro por estado -->
+                    <div class="min-w-[180px]">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
+                            Estado
+                        </label>
+                        <select name="estado"
+                                class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50
+                                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                                       text-slate-700 cursor-pointer">
+                            <option value="">Todos los estados</option>
+                            <?php foreach (['OPERATIVO', 'EN MANTENIMIENTO', 'DE BAJA'] as $opcion): ?>
+                                <option value="<?= $e($opcion) ?>"
+                                    <?= $filtros['estado'] === $opcion ? 'selected' : '' ?>>
+                                    <?= $e($opcion) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <!-- Filtro por zona -->
+                    <div class="min-w-[200px]">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
+                            Zona
+                        </label>
+                        <select name="zona_id"
+                                class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50
+                                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                                       text-slate-700 cursor-pointer">
+                            <option value="">Todas las zonas</option>
+                            <?php foreach ($zonas as $zona): ?>
+                                <option value="<?= (int) $zona['id'] ?>"
+                                    <?= (string) $filtros['zona_id'] === (string) $zona['id'] ? 'selected' : '' ?>>
+                                    <?= $e($zona['zona_nombre']) ?>
+                                    <?php if (!empty($zona['sede_nombre'])): ?>
+                                        — <?= $e($zona['sede_nombre']) ?>
+                                    <?php endif; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <!-- Botones de acción del formulario -->
+                    <div class="flex gap-2">
+                        <button type="submit"
+                                class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
+                                       bg-blue-600 hover:bg-blue-700 text-white rounded-lg
+                                       transition-colors duration-150 shadow-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"/>
+                            </svg>
+                            Filtrar
+                        </button>
+
+                        <?php
+                        // Solo muestra "Limpiar" si hay algún filtro activo
+                        $hayFiltros = $filtros['search'] !== '' || $filtros['estado'] !== '' || $filtros['zona_id'] !== '';
+                        ?>
+                        <?php if ($hayFiltros): ?>
+                            <a href="/?page=inventario"
+                               class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
+                                      text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg
+                                      transition-colors duration-150">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                                Limpiar
+                            </a>
+                        <?php endif; ?>
+                    </div>
+
+                </form>
+            </div>
+
+            <!-- ── Tabla de resultados o estado vacío ─────────────────────────── -->
+            <?php if (empty($equipos)): ?>
+
+                <!-- Estado vacío: ningún equipo coincide con los filtros aplicados -->
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
+                    <div class="flex flex-col items-center gap-4 max-w-sm mx-auto">
+                        <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
+                            <svg class="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                      d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-slate-700 font-semibold text-base">
+                                No se encontraron equipos informáticos
+                            </p>
+                            <p class="text-slate-500 text-sm mt-1">
+                                que coincidan con los criterios de búsqueda seleccionados.
+                            </p>
+                        </div>
+                        <?php if ($hayFiltros): ?>
+                            <a href="/?page=inventario"
+                               class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold
+                                      text-blue-600 bg-blue-50 border border-blue-200 rounded-lg
+                                      hover:bg-blue-100 transition-colors duration-150">
+                                Limpiar todos los filtros
+                            </a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+            <?php else: ?>
+
+                <!-- Contador de resultados -->
+                <p class="text-xs text-slate-500 mb-3 px-1">
+                    <?= count($equipos) ?> equipo<?= count($equipos) !== 1 ? 's' : '' ?> encontrado<?= count($equipos) !== 1 ? 's' : '' ?>
+                    <?php if ($hayFiltros): ?>
+                        <span class="text-slate-400">— con filtros aplicados</span>
+                    <?php endif; ?>
+                </p>
+
+                <!-- Tabla de inventario -->
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="bg-slate-50 border-b border-slate-200">
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-8">
+                                        #
+                                    </th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                        Equipo / Modelo
+                                    </th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                        N° de Serie
+                                    </th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                        Zona / Sede
+                                    </th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                        Responsable
+                                    </th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                        Estado
+                                    </th>
+                                    <th class="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                        Acciones
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+
+                                <?php foreach ($equipos as $equipo): ?>
+                                    <tr class="hover:bg-slate-50 transition-colors duration-100 group">
+
+                                        <!-- ID -->
+                                        <td class="px-5 py-3.5 text-slate-400 text-xs font-mono">
+                                            <?= (int) $equipo['id'] ?>
+                                        </td>
+
+                                        <!-- Tipo · Marca · Modelo -->
+                                        <td class="px-5 py-3.5">
+                                            <p class="font-semibold text-slate-800">
+                                                <?= $e($equipo['tipo']) ?>
+                                            </p>
+                                            <p class="text-xs text-slate-500 mt-0.5">
+                                                <?= $e($equipo['marca']) ?>
+                                                <?php if (!empty($equipo['modelo'])): ?>
+                                                    · <?= $e($equipo['modelo']) ?>
+                                                <?php endif; ?>
+                                            </p>
+                                        </td>
+
+                                        <!-- Número de serie -->
+                                        <td class="px-5 py-3.5">
+                                            <span class="font-mono text-xs text-slate-600 bg-slate-100
+                                                         px-2 py-0.5 rounded">
+                                                <?= $e($equipo['numero_serie'] ?? '—') ?>
+                                            </span>
+                                        </td>
+
+                                        <!-- Zona + Sede -->
+                                        <td class="px-5 py-3.5">
+                                            <p class="text-slate-700 font-medium">
+                                                <?= $e($equipo['zona_nombre'] ?? '—') ?>
+                                            </p>
+                                            <p class="text-xs text-slate-400 mt-0.5">
+                                                <?= $e($equipo['sede_nombre'] ?? '—') ?>
+                                            </p>
+                                        </td>
+
+                                        <!-- Funcionario responsable -->
+                                        <td class="px-5 py-3.5">
+                                            <p class="text-slate-700">
+                                                <?= $e($equipo['funcionario_nombre']) ?>
+                                            </p>
+                                            <?php if (!empty($equipo['funcionario_cargo'])): ?>
+                                                <p class="text-xs text-slate-400 mt-0.5">
+                                                    <?= $e($equipo['funcionario_cargo']) ?>
+                                                </p>
+                                            <?php endif; ?>
+                                        </td>
+
+                                        <!-- Badge de estado -->
+                                        <td class="px-5 py-3.5">
+                                            <span class="inline-flex items-center px-2.5 py-1 rounded-full
+                                                         text-xs font-semibold <?= badgeEquipo($equipo['estado']) ?>">
+                                                <?= iconoEstado($equipo['estado']) ?>
+                                                <?= $e($equipo['estado']) ?>
+                                            </span>
+                                        </td>
+
+                                        <!-- Acciones -->
+                                        <td class="px-5 py-3.5 text-right">
+                                            <div class="flex items-center justify-end gap-1.5
+                                                        opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                                                <!-- Ver detalle -->
+                                                <a href="/?page=detalle&id=<?= (int) $equipo['id'] ?>"
+                                                   title="Ver ficha completa"
+                                                   class="p-1.5 text-slate-500 hover:text-blue-600
+                                                          hover:bg-blue-50 rounded-lg transition-colors duration-150">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                                    </svg>
+                                                </a>
+                                                <!-- Editar (placeholder fase futura) -->
+                                                <a href="/?page=editar&id=<?= (int) $equipo['id'] ?>"
+                                                   title="Editar equipo"
+                                                   class="p-1.5 text-slate-500 hover:text-emerald-600
+                                                          hover:bg-emerald-50 rounded-lg transition-colors duration-150">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                                    </svg>
+                                                </a>
+                                            </div>
+                                        </td>
+
+                                    </tr>
+                                <?php endforeach; ?>
+
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pie de la tabla -->
+                    <div class="px-5 py-3 bg-slate-50 border-t border-slate-100
+                                flex items-center justify-between">
+                        <p class="text-xs text-slate-400">
+                            Mostrando <span class="font-semibold text-slate-600"><?= count($equipos) ?></span>
+                            registro<?= count($equipos) !== 1 ? 's' : '' ?>
+                        </p>
+                        <a href="/?page=registrar"
+                           class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold
+                                  text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg
+                                  transition-colors duration-150">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            Registrar equipo
+                        </a>
+                    </div>
+
+                </div><!-- /tabla -->
+
+            <?php endif; ?>
+
+        </main><!-- /contenido desplazable -->
+
+    </div><!-- /columna principal -->
+
+</body>
+</html>

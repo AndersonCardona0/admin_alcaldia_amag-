@@ -1,0 +1,42 @@
+# ─── Entorno y credenciales ──────────────────────────────────────────────────
+# Nunca versionar credenciales de BD ni configuración local sensible.
+.env
+config_local.php
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+
+# ─── Base de datos ───────────────────────────────────────────────────────────
+*.sql
+respaldos/
+
+# ─── Archivos generados en runtime ───────────────────────────────────────────
+# Los PDFs son output dinámico del motor de actas; no son código fuente.
+*.pdf
+
+# ─── Herramientas de desarrollo local ────────────────────────────────────────
+# Configuración del agente Claude Code (local por desarrollador).
+.claude/
+
+# Editores
+.vscode/
+.idea/
+
+# ─── Sistema operativo ───────────────────────────────────────────────────────
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ─── Archivos temporales de editores ─────────────────────────────────────────
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# ─── Binarios locales (no pertenecen al proyecto PHP) ────────────────────────
+*.exe
+*.dll
