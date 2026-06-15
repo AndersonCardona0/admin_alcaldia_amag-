@@ -45,7 +45,8 @@ $claseNavItem = fn(string $pagina): string => $paginaActiva === $pagina
             <span class="text-sm font-medium">Dashboard</span>
         </a>
 
-        <!-- Zonas -->
+        <!-- Zonas: solo ADMINISTRADOR -->
+        <?php if (esAdministrador()): ?>
         <a href="/?page=zonas" class="<?= $claseNavItem('zonas') ?>">
             <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -55,6 +56,18 @@ $claseNavItem = fn(string $pagina): string => $paginaActiva === $pagina
             </svg>
             <span class="text-sm font-medium">Zonas</span>
         </a>
+        <?php endif; ?>
+
+        <!-- Funcionarios: solo ADMINISTRADOR -->
+        <?php if (esAdministrador()): ?>
+        <a href="/?page=funcionarios" class="<?= $claseNavItem('funcionarios') ?>">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            <span class="text-sm font-medium">Funcionarios</span>
+        </a>
+        <?php endif; ?>
 
         <!-- Inventario -->
         <a href="/?page=inventario" class="<?= $claseNavItem('inventario') ?>">
@@ -65,7 +78,17 @@ $claseNavItem = fn(string $pagina): string => $paginaActiva === $pagina
             <span class="text-sm font-medium">Inventario</span>
         </a>
 
-        <!-- Ajustes -->
+        <!-- Reportes: todos los usuarios autenticados -->
+        <a href="/?page=reportes" class="<?= $claseNavItem('reportes') ?>">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            <span class="text-sm font-medium">Reportes</span>
+        </a>
+
+        <!-- Ajustes: solo ADMINISTRADOR -->
+        <?php if (esAdministrador()): ?>
         <a href="/?page=ajustes" class="<?= $claseNavItem('ajustes') ?>">
             <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -74,11 +97,32 @@ $claseNavItem = fn(string $pagina): string => $paginaActiva === $pagina
             </svg>
             <span class="text-sm font-medium">Ajustes</span>
         </a>
+        <?php endif; ?>
 
     </nav>
 
-    <!-- Botón "Registrar Equipo" — anclado al pie del sidebar -->
-    <div class="p-3 flex-shrink-0 border-t border-slate-700">
+    <!-- Pie del sidebar: usuario activo + registrar + cerrar sesión -->
+    <div class="p-3 flex-shrink-0 border-t border-slate-700 space-y-2">
+
+        <!-- Panel del usuario autenticado -->
+        <div class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-slate-900">
+            <div class="w-7 h-7 bg-slate-700 rounded-full flex items-center justify-center flex-shrink-0">
+                <svg class="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                </svg>
+            </div>
+            <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold text-slate-200 truncate">
+                    <?= htmlspecialchars($_SESSION['usuario_nombre'] ?? 'Usuario', ENT_QUOTES, 'UTF-8') ?>
+                </p>
+                <p class="text-xs text-slate-500 truncate">
+                    <?= htmlspecialchars($_SESSION['usuario_rol'] ?? '', ENT_QUOTES, 'UTF-8') ?>
+                </p>
+            </div>
+        </div>
+
+        <!-- Registrar nuevo equipo -->
         <a href="/?page=registrar"
            class="flex items-center justify-center gap-2 w-full px-4 py-2.5
                   bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600
@@ -89,7 +133,24 @@ $claseNavItem = fn(string $pagina): string => $paginaActiva === $pagina
             </svg>
             Registrar Equipo
         </a>
-        <p class="text-center text-slate-600 text-xs mt-3">Sistema v1.0.0</p>
+
+        <!-- Cierre de sesión (POST + CSRF — previene forced-logout via enlace GET) -->
+        <form method="POST" action="/?page=logout">
+            <input type="hidden" name="csrf_token"
+                   value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+            <button type="submit"
+                    class="flex items-center justify-center gap-2 w-full px-4 py-2
+                           text-slate-500 hover:text-red-300 hover:bg-slate-700/60
+                           rounded-lg text-xs font-medium transition-colors duration-150">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                </svg>
+                Cerrar sesión
+            </button>
+        </form>
+
+        <p class="text-center text-slate-600 text-xs pt-1">Sistema v1.0.0</p>
     </div>
 
 </aside>

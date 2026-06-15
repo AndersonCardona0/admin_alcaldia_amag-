@@ -55,8 +55,12 @@
                 </svg>
             </div>
             <div class="hidden sm:block leading-tight">
-                <p class="text-sm font-semibold text-slate-700">Administrador</p>
-                <p class="text-xs text-slate-400">Sistema TI</p>
+                <p class="text-sm font-semibold text-slate-700">
+                    <?= htmlspecialchars($_SESSION['usuario_nombre'] ?? 'Usuario', ENT_QUOTES, 'UTF-8') ?>
+                </p>
+                <p class="text-xs text-slate-400">
+                    <?= htmlspecialchars($_SESSION['usuario_rol'] ?? '', ENT_QUOTES, 'UTF-8') ?>
+                </p>
             </div>
             <!-- Chevron desplegable (futuro menú de usuario) -->
             <svg class="w-4 h-4 text-slate-400 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
