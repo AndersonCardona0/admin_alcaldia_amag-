@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * ZonaModel.php
  * Encapsula las consultas sobre la tabla `zonas` con sus relaciones
@@ -15,9 +17,9 @@ class ZonaModel
     }
 
     /**
-     * Devuelve todas las zonas con el nombre de su sede y el nombre del
-     * funcionario encargado. Si una zona no tiene encargado asignado,
-     * el campo `encargado_nombre` retorna 'Sin asignar'.
+     * Devuelve todas las zonas con nombre de sede y encargado.
+     * Usado por: DashboardController, EquipoController, ReporteController,
+     * ZonaController. No romper firma ni nombre — tiene múltiples callers.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -37,8 +39,32 @@ class ZonaModel
             ORDER BY s.nombre ASC, z.nombre ASC
         ";
 
-        // Sin parámetros variables; query() es suficiente y más eficiente aquí
         $stmt = $this->db->query($sql);
         return $stmt->fetchAll();
+    }
+
+    /**
+     * Inserta una nueva zona en la tabla.
+     * El encargado es opcional (null si no se selecciona).
+     * La sede es obligatoria (restricción de FK garantizada en el controlador).
+     *
+     * @throws PDOException Si la inserción falla a nivel de base de datos.
+     */
+    public function registrar(
+        string $nombre,
+        int    $sedeId,
+        ?int   $encargadoId,
+        string $estado
+    ): void {
+        $stmt = $this->db->prepare(
+            "INSERT INTO zonas (nombre, sede_id, encargado_id, estado)
+             VALUES (:nombre, :sede_id, :encargado_id, :estado)"
+        );
+        $stmt->execute([
+            ':nombre'       => $nombre,
+            ':sede_id'      => $sedeId,
+            ':encargado_id' => $encargadoId, // PDO inserta NULL correctamente
+            ':estado'       => $estado,
+        ]);
     }
 }
