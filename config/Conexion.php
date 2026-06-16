@@ -1,25 +1,30 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * Conexion.php
- * Núcleo de persistencia de datos: gestiona la conexión PDO única
- * hacia la base de datos MySQL. Implementa patrón Singleton estático
- * para evitar conexiones duplicadas durante el ciclo de vida de la petición.
+ * Núcleo de persistencia: conexión PDO única (Singleton estático).
+ *
+ * Estrategia de credenciales por entorno (constante APP_ENV definida en index.php):
+ *   · development → lee el archivo .env de la raíz del proyecto
+ *   · production  → lee config/config.prod.php (excluido de Git)
+ *
+ * En ambos casos los mensajes de error expuestos al cliente son genéricos;
+ * el detalle técnico solo se registra en error_log del servidor.
  */
 class Conexion
 {
-    /** @var PDO|null Instancia única compartida en toda la aplicación */
+    /** @var PDO|null Instancia única compartida en toda la petición */
     private static ?PDO $conn = null;
 
-    /** Evita instanciación directa; toda interacción es vía conectar() */
+    /** Evita instanciación directa */
     private function __construct() {}
 
     /**
-     * Devuelve (o crea) la conexión PDO a la base de datos.
-     * Lee las credenciales desde el archivo .env ubicado en la raíz del proyecto.
+     * Devuelve (o crea) la conexión PDO.
      *
-     * @throws RuntimeException si las variables de entorno no están definidas
-     *                          o si la conexión a MySQL falla.
+     * @throws RuntimeException Si las credenciales son incompletas o la conexión falla.
      * @return PDO
      */
     public static function conectar(): PDO
@@ -28,17 +33,13 @@ class Conexion
             return self::$conn;
         }
 
-        // Carga las variables del .env si no han sido inyectadas aún
-        self::cargarEnv();
-
-        $host     = $_ENV['DB_HOST']     ?? null;
-        $dbname   = $_ENV['DB_NAME']     ?? null;
-        $user     = $_ENV['DB_USER']     ?? null;
-        $password = $_ENV['DB_PASSWORD'] ?? null;
+        [$host, $dbname, $user, $password] = self::resolverCredenciales();
 
         if (!$host || !$dbname || !$user) {
             throw new RuntimeException(
-                'Variables de entorno de base de datos incompletas. Verifique el archivo .env'
+                APP_DEBUG
+                    ? 'Credenciales de BD incompletas. Verifique el archivo .env'
+                    : 'No fue posible establecer la conexión con la base de datos.'
             );
         }
 
@@ -46,19 +47,18 @@ class Conexion
 
         try {
             self::$conn = new PDO($dsn, $user, $password, [
-                // Convierte errores de SQL en excepciones PHP capturables
                 PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-                // Usa sentencias preparadas nativas del servidor; blinda contra SQL Injection
                 PDO::ATTR_EMULATE_PREPARES   => false,
-                // Devuelve filas como arrays asociativos por defecto
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                // Desactiva la conversión automática de tipos en PHP 8
                 PDO::ATTR_STRINGIFY_FETCHES  => false,
             ]);
+
         } catch (PDOException $e) {
-            // No expone detalles de credenciales en producción
+            // En producción nunca se expone el DSN ni el mensaje de PDO al cliente.
             throw new RuntimeException(
-                'Error al conectar con la base de datos: ' . $e->getMessage()
+                APP_DEBUG
+                    ? 'Error PDO: ' . $e->getMessage()
+                    : 'No fue posible conectar con la base de datos.'
             );
         }
 
@@ -66,7 +66,7 @@ class Conexion
     }
 
     /**
-     * Cierra explícitamente la conexión PDO activa.
+     * Cierra explícitamente la conexión activa.
      * Útil en scripts CLI o procesos de larga duración.
      */
     public static function desconectar(): void
@@ -74,9 +74,72 @@ class Conexion
         self::$conn = null;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Resolución de credenciales por entorno
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
-     * Parsea el archivo .env de la raíz del proyecto e inyecta
-     * cada par CLAVE=VALOR en $_ENV y putenv(), ignorando comentarios (#).
+     * Delega la carga de credenciales al mecanismo correcto según APP_ENV.
+     *
+     * @return array{string|null, string|null, string|null, string|null}
+     *         [$host, $dbname, $user, $password]
+     */
+    private static function resolverCredenciales(): array
+    {
+        if (defined('APP_ENV') && APP_ENV === 'production') {
+            return self::cargarCredencialesProduccion();
+        }
+
+        // Entorno de desarrollo: leer el archivo .env de la raíz
+        self::cargarEnv();
+
+        return [
+            $_ENV['DB_HOST']     ?? null,
+            $_ENV['DB_NAME']     ?? null,
+            $_ENV['DB_USER']     ?? null,
+            $_ENV['DB_PASSWORD'] ?? null,
+        ];
+    }
+
+    /**
+     * Carga las credenciales desde config/config.prod.php.
+     * El archivo debe retornar un array asociativo con las claves DB_*.
+     *
+     * @throws RuntimeException Si el archivo no existe o su formato es inválido.
+     * @return array{string|null, string|null, string|null, string|null}
+     */
+    private static function cargarCredencialesProduccion(): array
+    {
+        $ruta = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'config'
+              . DIRECTORY_SEPARATOR . 'config.prod.php';
+
+        if (!file_exists($ruta)) {
+            throw new RuntimeException(
+                'Archivo de configuración de producción no encontrado. '
+                . 'Contacte al administrador del sistema.'
+            );
+        }
+
+        $cfg = require $ruta;
+
+        if (!is_array($cfg)) {
+            throw new RuntimeException(
+                'El archivo config.prod.php debe retornar un array asociativo.'
+            );
+        }
+
+        return [
+            $cfg['DB_HOST']     ?? null,
+            $cfg['DB_NAME']     ?? null,
+            $cfg['DB_USER']     ?? null,
+            $cfg['DB_PASSWORD'] ?? null,
+        ];
+    }
+
+    /**
+     * Parsea el archivo .env de la raíz e inyecta pares CLAVE=VALOR
+     * en $_ENV y putenv(). Ignora comentarios (#) y líneas vacías.
+     * Solo activo en entorno de desarrollo.
      */
     private static function cargarEnv(): void
     {
@@ -91,7 +154,6 @@ class Conexion
         foreach ($lineas as $linea) {
             $linea = trim($linea);
 
-            // Ignora comentarios y líneas sin el separador '='
             if ($linea === '' || str_starts_with($linea, '#') || !str_contains($linea, '=')) {
                 continue;
             }

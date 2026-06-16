@@ -8,6 +8,36 @@
 
 declare(strict_types=1);
 
+// ══════════════════════════════════════════════════════════════════════════════
+// PILAR 1 — Detección de entorno
+// Cualquier host distinto de localhost / 127.0.0.1 / ::1 se trata como
+// producción. Esta constante dirige todos los controles de seguridad subsiguientes.
+// ══════════════════════════════════════════════════════════════════════════════
+$_detectedHost = strtolower($_SERVER['HTTP_HOST'] ?? 'cli');
+define('APP_ENV',   in_array($_detectedHost, ['localhost', '127.0.0.1', '::1'], true)
+    ? 'development'
+    : 'production'
+);
+define('APP_DEBUG', APP_ENV === 'development');
+unset($_detectedHost);
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PILAR 2 — Cabeceras de seguridad HTTP
+// Se envían ANTES de session_start() y de cualquier salida HTML.
+// ══════════════════════════════════════════════════════════════════════════════
+header('X-Frame-Options: DENY');                        // anti-Clickjacking
+header('X-Content-Type-Options: nosniff');              // anti-MIME sniffing
+header('Referrer-Policy: no-referrer-when-downgrade');  // privacidad de referrer
+header('X-XSS-Protection: 1; mode=block');              // filtro XSS legacy
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PILAR 3 — Errores: silencio total en pantalla, todo al log del servidor
+// ══════════════════════════════════════════════════════════════════════════════
+ini_set('display_errors',         APP_DEBUG ? '1' : '0');
+ini_set('display_startup_errors', APP_DEBUG ? '1' : '0');
+error_reporting(E_ALL);
+ini_set('log_errors', '1');
+
 // Configura la cookie de sesión antes de session_start():
 //  · httponly  → JavaScript no puede leer ni robar el ID de sesión
 //  · samesite  → el navegador no envía la cookie en peticiones cross-site (anti-CSRF)
@@ -16,7 +46,10 @@ session_set_cookie_params([
     'lifetime' => 0,
     'path'     => '/',
     'domain'   => '',
-    'secure'   => false,
+    // Producción: true — la cookie solo viaja sobre HTTPS.
+    // Si el servidor aún no tiene SSL instalado, cambiar a false
+    // temporalmente hasta que el certificado esté activo.
+    'secure'   => !APP_DEBUG,
     'httponly' => true,
     'samesite' => 'Strict',
 ]);
@@ -28,10 +61,6 @@ session_start();
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
-
-// Configuración de errores (desactivar display_errors en producción real)
-ini_set('display_errors', '1');
-error_reporting(E_ALL);
 
 date_default_timezone_set('America/Bogota');
 

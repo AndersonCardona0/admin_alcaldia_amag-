@@ -33,11 +33,9 @@ $equipoId = (int) ($equipo['id'] ?? 0);
     <?php include __DIR__ . '/modules/sidebar.php'; ?>
 
     <!-- ── Columna principal ────────────────────────────────────────────────── -->
-    <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <div class="flex-1 min-w-0 overflow-y-auto">
 
-        <?php include __DIR__ . '/modules/header.php'; ?>
-
-        <main class="flex-1 overflow-y-auto p-6">
+        <main class="p-6">
 
             <!-- ── Encabezado de página ──────────────────────────────────────── -->
             <div class="flex items-center justify-between mb-6">

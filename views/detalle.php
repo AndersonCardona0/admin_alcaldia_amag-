@@ -74,11 +74,9 @@ $esDeBaja = ($equipo['estado'] ?? '') === 'DE BAJA';
     <?php include __DIR__ . '/modules/sidebar.php'; ?>
 
     <!-- ── Columna principal ────────────────────────────────────────────────── -->
-    <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <div class="flex-1 min-w-0 overflow-y-auto">
 
-        <?php include __DIR__ . '/modules/header.php'; ?>
-
-        <main class="flex-1 overflow-y-auto p-6">
+        <main class="p-6">
 
             <!-- ── Mensajes flash ────────────────────────────────────────────── -->
             <?php if (!empty($_SESSION['flash_success'])): ?>

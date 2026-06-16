@@ -32,13 +32,9 @@ function badgeEstado(string $estado): string
     <?php include __DIR__ . '/modules/sidebar.php'; ?>
 
     <!-- ── Columna principal (header + contenido) ───────────────────────────── -->
-    <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <div class="flex-1 min-w-0 overflow-y-auto">
 
-        <!-- Barra superior -->
-        <?php include __DIR__ . '/modules/header.php'; ?>
-
-        <!-- Área de contenido desplazable -->
-        <main class="flex-1 overflow-y-auto p-6">
+        <main class="p-6">
 
             <!-- Encabezado de sección -->
             <div class="mb-6">

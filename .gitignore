@@ -1,7 +1,8 @@
 # ─── Entorno y credenciales ──────────────────────────────────────────────────
-# Nunca versionar credenciales de BD ni configuración local sensible.
+# Nunca versionar credenciales de BD ni configuración sensible.
 .env
 config_local.php
+config/config.prod.php
 
 # ─── Logs ────────────────────────────────────────────────────────────────────
 *.log

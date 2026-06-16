@@ -31,13 +31,9 @@ $sel = fn(string $campo, string $valor): string =>
     <?php include __DIR__ . '/modules/sidebar.php'; ?>
 
     <!-- ── Columna principal ────────────────────────────────────────────────── -->
-    <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <div class="flex-1 min-w-0 overflow-y-auto">
 
-        <!-- Barra superior -->
-        <?php include __DIR__ . '/modules/header.php'; ?>
-
-        <!-- Área de contenido desplazable -->
-        <main class="flex-1 overflow-y-auto p-6">
+        <main class="p-6">
 
             <!-- ── Encabezado de página ──────────────────────────────────────── -->
             <div class="flex items-center justify-between mb-6">
