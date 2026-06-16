@@ -197,6 +197,39 @@ $e = fn(mixed $v): string => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, '
                 </form>
             </div>
 
+            <!-- ── Badge de filtro activo por zona ───────────────────────────── -->
+            <?php if ($filtros['zona_id'] !== ''): ?>
+                <?php
+                // Busca el nombre de la zona activa dentro del array ya cargado
+                $zonaNombreActiva = '';
+                foreach ($zonas as $z) {
+                    if ((string) $z['id'] === (string) $filtros['zona_id']) {
+                        $zonaNombreActiva = $z['zona_nombre'];
+                        break;
+                    }
+                }
+                ?>
+                <div class="flex items-center gap-2 mb-4">
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold
+                                 text-blue-700 bg-blue-50 border border-blue-200 rounded-full">
+                        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                        Filtrando por Zona:
+                        <span class="font-bold">
+                            <?= htmlspecialchars($zonaNombreActiva ?: 'ID ' . $filtros['zona_id'], ENT_QUOTES, 'UTF-8') ?>
+                        </span>
+                    </span>
+                    <a href="/?page=inventario"
+                       class="text-xs text-slate-400 hover:text-slate-600 transition-colors duration-150">
+                        × Quitar filtro
+                    </a>
+                </div>
+            <?php endif; ?>
+
             <!-- ── Tabla de resultados o estado vacío ─────────────────────────── -->
             <?php if (empty($equipos)): ?>
 
@@ -211,7 +244,11 @@ $e = fn(mixed $v): string => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, '
                         </div>
                         <div>
                             <p class="text-slate-700 font-semibold text-base">
-                                No se encontraron equipos informáticos
+                                <?php if ($filtros['zona_id'] !== '' && $filtros['search'] === '' && $filtros['estado'] === ''): ?>
+                                    No se encontraron PCs registrados en esta zona
+                                <?php else: ?>
+                                    No se encontraron equipos informáticos
+                                <?php endif; ?>
                             </p>
                             <p class="text-slate-500 text-sm mt-1">
                                 que coincidan con los criterios de búsqueda seleccionados.

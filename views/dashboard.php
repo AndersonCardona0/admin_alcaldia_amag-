@@ -203,7 +203,7 @@ function badgeEstado(string $estado): string
 
                                         <!-- Acciones -->
                                         <td class="px-5 py-3.5 text-right">
-                                            <a href="/?page=zona&id=<?= (int) $zona['id'] ?>"
+                                            <a href="/?page=inventario&zona_id=<?= (int) $zona['id'] ?>"
                                                class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium
                                                       text-slate-600 bg-slate-100 hover:bg-slate-200
                                                       rounded-lg transition-colors duration-150">
