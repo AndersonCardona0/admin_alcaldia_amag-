@@ -18,43 +18,48 @@ class FuncionarioModel
     }
 
     /**
-     * Retorna todos los funcionarios ordenados alfabéticamente.
-     * Usado tanto en los selectores de registrar/editar equipo
-     * como en la tabla del panel de gestión de funcionarios.
+     * Retorna todos los funcionarios con el nombre de su zona asignada.
+     * Usado en la tabla del panel de gestión y en selectores de equipo.
      *
      * @return array<int, array<string, mixed>>
      */
     public function obtenerTodos(): array
     {
         $stmt = $this->db->query(
-            "SELECT id, nombre, cargo, dependencia, email
-             FROM funcionarios
-             ORDER BY nombre ASC"
+            "SELECT   f.id,
+                      f.nombre,
+                      f.cargo,
+                      f.email,
+                      COALESCE(z.nombre, '—') AS zona_nombre
+             FROM     funcionarios f
+             LEFT JOIN zonas z ON z.id = f.zona_id
+             ORDER BY f.nombre ASC"
         );
         return $stmt->fetchAll();
     }
 
     /**
-     * Inserta un nuevo funcionario en la tabla.
+     * Inserta un nuevo funcionario vinculado a una zona existente.
      * El email es opcional (NULL si se omite).
      *
-     * @throws PDOException Si la inserción falla a nivel de base de datos.
+     * @param int     $zonaId FK obligatoria hacia `zonas.id`.
+     * @throws PDOException Si la FK de zona no existe (SQLSTATE 23000) u otro fallo de BD.
      */
     public function registrar(
         string  $nombre,
         string  $cargo,
-        string  $dependencia,
+        int     $zonaId,
         ?string $email = null
     ): void {
         $stmt = $this->db->prepare(
-            "INSERT INTO funcionarios (nombre, cargo, dependencia, email)
-             VALUES (:nombre, :cargo, :dependencia, :email)"
+            "INSERT INTO funcionarios (nombre, cargo, zona_id, email)
+             VALUES (:nombre, :cargo, :zona_id, :email)"
         );
         $stmt->execute([
-            ':nombre'      => $nombre,
-            ':cargo'       => $cargo,
-            ':dependencia' => $dependencia,
-            ':email'       => $email,
+            ':nombre'  => $nombre,
+            ':cargo'   => $cargo,
+            ':zona_id' => $zonaId,
+            ':email'   => $email,
         ]);
     }
 

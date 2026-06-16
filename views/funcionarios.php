@@ -5,8 +5,9 @@ declare(strict_types=1);
 /**
  * funcionarios.php — Panel de gestión de funcionarios.
  * Recibe de FuncionarioController::mostrar():
- *   $funcionarios → array con todos los registros (id, nombre, cargo, dependencia)
+ *   $funcionarios → array con todos los registros (id, nombre, cargo, zona_nombre, email)
  *   $total        → int con el conteo total para el badge del encabezado
+ *   $zonas        → array con todas las zonas (id, nombre) para poblar el <select>
  */
 
 // Alias de escape seguro
@@ -129,23 +130,27 @@ $e = fn(mixed $v): string => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, '
                                           transition-shadow duration-150">
                         </div>
 
-                        <!-- Dependencia -->
+                        <!-- Zona (selector dinámico poblado desde el controlador) -->
                         <div class="mb-4">
-                            <label for="dependencia"
+                            <label for="zona_id"
                                    class="block text-xs font-semibold text-slate-600
                                           uppercase tracking-wide mb-1.5">
-                                Dependencia <span class="text-red-500">*</span>
+                                Zona <span class="text-red-500">*</span>
                             </label>
-                            <input type="text"
-                                   id="dependencia"
-                                   name="dependencia"
-                                   maxlength="150"
-                                   required
-                                   placeholder="Ej: Secretaría de Hacienda"
-                                   class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg
-                                          bg-white text-slate-800 placeholder-slate-400
-                                          focus:outline-none focus:ring-2 focus:ring-slate-400
-                                          transition-shadow duration-150">
+                            <select id="zona_id"
+                                    name="zona_id"
+                                    required
+                                    class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg
+                                           bg-white text-slate-700 cursor-pointer
+                                           focus:outline-none focus:ring-2 focus:ring-slate-400
+                                           transition-shadow duration-150">
+                                <option value="">— Seleccione una zona —</option>
+                                <?php foreach ($zonas as $zona): ?>
+                                    <option value="<?= $e((string) $zona['id']) ?>">
+                                        <?= htmlspecialchars($zona['nombre'], ENT_QUOTES, 'UTF-8') ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
 
                         <!-- Correo electrónico (opcional) -->
@@ -245,7 +250,7 @@ $e = fn(mixed $v): string => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, '
                                             Cargo
                                         </th>
                                         <th class="px-4 py-3 border-b border-slate-200">
-                                            Dependencia
+                                            Zona
                                         </th>
                                         <th class="px-4 py-3 border-b border-slate-200">
                                             Correo electrónico
@@ -265,7 +270,7 @@ $e = fn(mixed $v): string => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, '
                                                 <?= $e($f['cargo']) ?>
                                             </td>
                                             <td class="px-4 py-3 text-slate-500">
-                                                <?= $e($f['dependencia']) ?>
+                                                <?= $e($f['zona_nombre']) ?>
                                             </td>
                                             <td class="px-4 py-3">
                                                 <?php if (!empty($f['email'])): ?>
