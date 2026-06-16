@@ -77,13 +77,11 @@ class AuthController
         // ── 3. Verificación de credenciales con mitigación de timing attack ───
         $registro = $this->authModel->buscarPorUsuario($usuario);
 
-        // Siempre se ejecuta password_verify() para que el tiempo de respuesta
-        // sea uniforme independientemente de si el usuario existe en la BD.
         $hashComparar = !empty($registro) ? $registro['password_hash'] : self::HASH_DUMMY;
         $credencialesValidas = !empty($registro) && password_verify($password, $hashComparar);
 
         if (!$credencialesValidas) {
-            $_SESSION['flash_login_error'] = 'Usuario o contraseña incorrectos. Verifique e intente nuevamente.';
+            $_SESSION['flash_login_error'] = 'Usuario o contraseña incorrectos. Verifique sus datos e intente nuevamente.';
             header('Location: /?page=login');
             exit;
         }
@@ -97,6 +95,7 @@ class AuthController
         $_SESSION['usuario_login']  = $registro['usuario'];
         $_SESSION['usuario_nombre'] = $registro['nombre_completo'];
         $_SESSION['usuario_rol']    = $registro['rol'];
+        $_SESSION['_last_activity'] = time(); // Inicia el reloj de expiración por inactividad
 
         // Regenera el CSRF token con la nueva sesión para evitar CSRF token fixation
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));

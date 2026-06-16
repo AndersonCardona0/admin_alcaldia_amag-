@@ -16,7 +16,7 @@ require_once __DIR__ . '/../models/FuncionarioModel.php';
  *
  * Ambas rutas exigen rol ADMINISTRADOR (index.php + constructor).
  */
-class ZonaController
+class ZonaController extends BaseController
 {
     private ZonaModel        $zonaModel;
     private SedeModel        $sedeModel;
@@ -24,12 +24,7 @@ class ZonaController
 
     public function __construct()
     {
-        // Capa 1: auth guard — defensa en profundidad sobre el guard de index.php
-        if (empty($_SESSION['usuario_id'])) {
-            header('Location: /?page=login');
-            exit;
-        }
-        // Capa 2: RBAC — solo ADMINISTRADOR gestiona zonas
+        parent::__construct();
         requiereAdministrador('/?page=dashboard');
 
         $this->zonaModel        = new ZonaModel();

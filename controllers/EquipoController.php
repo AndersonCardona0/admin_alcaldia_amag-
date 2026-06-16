@@ -9,13 +9,14 @@ require_once __DIR__ . '/../models/HistorialModel.php';
  * Responsabilidad única: sanitizar entradas, delegar al modelo y proveer
  * las variables necesarias a la vista. Sin lógica SQL ni salidas HTML.
  */
-class EquipoController
+class EquipoController extends BaseController
 {
     private EquipoModel $equipoModel;
     private ZonaModel   $zonaModel;
 
     public function __construct()
     {
+        parent::__construct();
         $this->equipoModel = new EquipoModel();
         $this->zonaModel   = new ZonaModel();
     }

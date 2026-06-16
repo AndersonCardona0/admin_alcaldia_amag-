@@ -13,7 +13,8 @@ declare(strict_types=1);
 // Cualquier host distinto de localhost / 127.0.0.1 / ::1 se trata como
 // producción. Esta constante dirige todos los controles de seguridad subsiguientes.
 // ══════════════════════════════════════════════════════════════════════════════
-$_detectedHost = strtolower($_SERVER['HTTP_HOST'] ?? 'cli');
+// Extrae solo el hostname, descartando el puerto (ej: "localhost:8000" → "localhost")
+$_detectedHost = strtolower(explode(':', $_SERVER['HTTP_HOST'] ?? 'cli')[0]);
 define('APP_ENV',   in_array($_detectedHost, ['localhost', '127.0.0.1', '::1'], true)
     ? 'development'
     : 'production'
@@ -46,9 +47,7 @@ session_set_cookie_params([
     'lifetime' => 0,
     'path'     => '/',
     'domain'   => '',
-    // Producción: true — la cookie solo viaja sobre HTTPS.
-    // Si el servidor aún no tiene SSL instalado, cambiar a false
-    // temporalmente hasta que el certificado esté activo.
+    // Producción (HTTPS): true — desactivar solo si el servidor aún no tiene SSL.
     'secure'   => !APP_DEBUG,
     'httponly' => true,
     'samesite' => 'Strict',
@@ -70,6 +69,9 @@ require_once __DIR__ . '/config/Conexion.php';
 // ── Control de acceso basado en roles: funciones esAdministrador() / requiereAdministrador() ─
 require_once __DIR__ . '/config/RbacGuard.php';
 
+// ── Clase base de controladores protegidos (segunda capa de auth) ─────────────
+require_once __DIR__ . '/controllers/BaseController.php';
+
 // ── Sanitización del parámetro de ruta ───────────────────────────────────────
 $paginaSolicitada = filter_input(INPUT_GET, 'page', FILTER_SANITIZE_SPECIAL_CHARS) ?? 'dashboard';
 $paginaSolicitada = strtolower(preg_replace('/[^a-zA-Z0-9_-]/', '', (string) $paginaSolicitada));
@@ -79,9 +81,34 @@ $paginaSolicitada = $paginaSolicitada ?: 'dashboard';
 // Rutas accesibles sin sesión activa
 $rutasPublicas = ['login', 'logout'];
 
-if (!in_array($paginaSolicitada, $rutasPublicas, true) && empty($_SESSION['usuario_id'])) {
-    header('Location: /?page=login');
-    exit;
+if (!in_array($paginaSolicitada, $rutasPublicas, true)) {
+
+    // Verifica presencia de los campos mínimos que establece procesarLogin()
+    $sesionValida = !empty($_SESSION['usuario_id']) && !empty($_SESSION['usuario_rol']);
+
+    // Expiración server-side por inactividad: 30 minutos sin actividad = sesión muerta
+    if ($sesionValida && isset($_SESSION['_last_activity'])) {
+        if ((time() - $_SESSION['_last_activity']) > 1800) {
+            $sesionValida = false;
+        }
+    }
+
+    if (!$sesionValida) {
+        // Limpia los datos de usuario pero conserva el CSRF token.
+        // La rotación del session ID ocurre SOLO en procesarLogin() tras
+        // autenticarse (límite de autenticación correcto). Si se llama a
+        // session_regenerate_id() aquí, el navegador recibe una cookie nueva
+        // mientras el formulario de login ya renderizado tiene el token de la
+        // sesión anterior → mismatch de CSRF garantizado en cada intento.
+        $csrfActual = $_SESSION['csrf_token'] ?? bin2hex(random_bytes(32));
+        $_SESSION   = ['csrf_token' => $csrfActual];
+
+        header('Location: /?page=login');
+        exit;
+    }
+
+    // Renueva el timestamp en cada petición autenticada para sliding expiration
+    $_SESSION['_last_activity'] = time();
 }
 
 // ── RBAC Guard: rutas restringidas al rol ADMINISTRADOR ───────────────────────

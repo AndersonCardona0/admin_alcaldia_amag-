@@ -24,17 +24,13 @@ require_once __DIR__ . '/../models/UsuarioModel.php';
  *  6. Aislamiento de PDOException con referencia hex única, sin exposición al cliente
  *  7. Patrón PRG: todos los métodos POST finalizan con header() + exit
  */
-class AjustesController
+class AjustesController extends BaseController
 {
     private UsuarioModel $model;
 
     public function __construct()
     {
-        // Auth Guard: sesión obligatoria para acceder a cualquier acción del módulo
-        if (empty($_SESSION['usuario_id'])) {
-            header('Location: /?page=login');
-            exit;
-        }
+        parent::__construct();
 
         $this->model = new UsuarioModel();
     }

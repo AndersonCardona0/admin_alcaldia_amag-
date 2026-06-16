@@ -5,13 +5,14 @@
  * Intermediario entre los modelos de datos y la vista del panel principal.
  * No contiene lógica SQL ni etiquetas HTML: solo orquesta y delega.
  */
-class DashboardController
+class DashboardController extends BaseController
 {
     private EquipoModel $equipoModel;
     private ZonaModel   $zonaModel;
 
     public function __construct()
     {
+        parent::__construct();
         $this->equipoModel = new EquipoModel();
         $this->zonaModel   = new ZonaModel();
     }

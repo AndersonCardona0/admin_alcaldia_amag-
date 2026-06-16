@@ -14,19 +14,14 @@ require_once __DIR__ . '/../models/ZonaModel.php';
  *
  * Las tres rutas exigen sesión activa (verificada en index.php antes del dispatch).
  */
-class ReporteController
+class ReporteController extends BaseController
 {
     private ReporteModel $reporteModel;
     private ZonaModel    $zonaModel;
 
     public function __construct()
     {
-        // Defensa en profundidad: verifica sesión activa incluso si el controlador
-        // se instancia fuera del flujo de index.php (que ya aplica el auth guard).
-        if (empty($_SESSION['usuario_id'])) {
-            header('Location: /?page=login');
-            exit;
-        }
+        parent::__construct();
         $this->reporteModel = new ReporteModel();
         $this->zonaModel    = new ZonaModel();
     }

@@ -15,19 +15,14 @@ require_once __DIR__ . '/../models/ZonaModel.php';
  *
  * Ambas rutas exigen rol ADMINISTRADOR (verificado en index.php + constructor).
  */
-class FuncionarioController
+class FuncionarioController extends BaseController
 {
     private FuncionarioModel $model;
     private ZonaModel        $zonaModel;
 
     public function __construct()
     {
-        // Capa 1: auth guard (defensa en profundidad respecto al guard de index.php)
-        if (empty($_SESSION['usuario_id'])) {
-            header('Location: /?page=login');
-            exit;
-        }
-        // Capa 2: RBAC — solo ADMINISTRADOR puede gestionar funcionarios
+        parent::__construct();
         requiereAdministrador('/?page=dashboard');
 
         $this->model     = new FuncionarioModel();
