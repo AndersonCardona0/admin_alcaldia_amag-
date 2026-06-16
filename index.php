@@ -176,16 +176,28 @@ try {
             break;
 
         case 'zonas':
-            // GET → panel con tabla de zonas y formulario de alta.
-            // POST → procesa el registro de una zona nueva (PRG).
+            // GET  (sin action)       → panel listado + formulario de alta
+            // POST (sin action)       → registrar zona nueva (PRG)
+            // GET  action=editar&id=X → formulario de edición pre-poblado
+            // POST action=editar&id=X → guardar cambios de la zona (PRG)
+            // POST action=eliminar    → baja lógica de la zona (PRG)
             require_once __DIR__ . '/models/ZonaModel.php';
             require_once __DIR__ . '/models/SedeModel.php';
             require_once __DIR__ . '/models/FuncionarioModel.php';
             require_once __DIR__ . '/controllers/ZonaController.php';
-            $ctrlZona = new ZonaController();
-            ($_SERVER['REQUEST_METHOD'] === 'POST')
-                ? $ctrlZona->guardar()
-                : $ctrlZona->mostrar();
+            $ctrlZona   = new ZonaController();
+            $zonaAction = trim(filter_input(INPUT_GET, 'action', FILTER_UNSAFE_RAW) ?? '');
+            if ($zonaAction === 'editar') {
+                ($_SERVER['REQUEST_METHOD'] === 'POST')
+                    ? $ctrlZona->guardarEdicion()
+                    : $ctrlZona->mostrarEditar();
+            } elseif ($zonaAction === 'eliminar' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+                $ctrlZona->desactivar();
+            } else {
+                ($_SERVER['REQUEST_METHOD'] === 'POST')
+                    ? $ctrlZona->guardar()
+                    : $ctrlZona->mostrar();
+            }
             break;
 
         case 'ajustes':
